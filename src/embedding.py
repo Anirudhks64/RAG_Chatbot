@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 class EmbeddingManager: 
     """Handles document embedding generation using Sentence Transformer"""
     
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5"):
         """
         Initialize the embedding manager
 
@@ -22,8 +22,10 @@ class EmbeddingManager:
     def _load_model(self): 
         try: 
             print(f"Loading embedding model: {self.model_name}")
+            print("\n")
             self.model = SentenceTransformer(self.model_name)
             print(f"Model loaded successfully. Embedding dimension: {self.model.get_embedding_dimension()}")
+            print("\n")
         except Exception as e: 
             print(f"Error loading model {self.model_name}: {e}")
             raise
@@ -45,5 +47,6 @@ class EmbeddingManager:
         print(f"Generating embeddings for {len(texts)} texts...")
         embeddings = self.model.encode(texts, show_progress_bar = True)
         print(f"Generated embeddings with shape: {embeddings.shape}")
+        print("\n")
         return embeddings
 

@@ -9,7 +9,6 @@ from google.genai import types
 # Load API Key from .env file
 load_dotenv(dotenv_path=".env")
 api_key = os.getenv("GEMINI_API_KEY")
-print(api_key)
 
 if not api_key:
     raise ValueError("GEMINI_API_KEY is missing from .env")
