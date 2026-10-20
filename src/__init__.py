@@ -1,4 +1,4 @@
-from chunker import split_documents, load_pdf_files
+from chunker import load_pdf_files
 from embedding import EmbeddingManager
 from vector_store import VectorStore
 from rag_retriever import RAGRetriever
@@ -6,13 +6,11 @@ from gemini_LLM_integration import build_context, generate_answer
 import time
 from pathlib import Path
 import debug
+import chainlit as cl
+import asyncio
 
-if __name__ == "__main__": 
-
+def get_answer(question: str) -> str:        
     start = time.perf_counter()
-    
-    question = "Are pets allowed?"
-
     print("\n")
     print("Loading PDF Files . . .")
     print("\n")
@@ -66,6 +64,73 @@ if __name__ == "__main__":
     print("\n")
 
     # Query Gemini API providing it with the question and extracted context 
-    generate_answer(question, context)
-
+    answer = generate_answer(question, context)
     print(f"took {time.perf_counter() - start:.2f}s")
+    
+    return answer
+
+
+
+THINKING_LINES = [
+    "Flipping through your PDFs . . .",
+    "Hunting for the best chunks . . .",
+    "Waking up the smart robot in the cloud . . .",
+    "Connecting the dots . . .",
+    "Reading the fine print so you don't have to . . .",
+    "Polishing the answer . . .",
+    "Almost there . . .",
+]
+ 
+TRACK_LENGTH = 10  # how many steps the robot takes before it reaches the books
+ 
+ 
+async def animate_thinking(reply: cl.Message):
+    """Updates the 'Thinking' bubble every moment until it is cancelled."""
+    frame = 0
+    while True:
+        step = frame % (TRACK_LENGTH + 1)
+        track = "  ".join(["·"] * step + ["🤖"] + ["·"] * (TRACK_LENGTH - step)) + "  📚"
+        line = THINKING_LINES[(frame // 4) % len(THINKING_LINES)]
+ 
+        reply.content = f"{line}\n\n{track}"
+        await reply.update()
+ 
+        frame += 1
+        await asyncio.sleep(0.7)
+ 
+ 
+@cl.on_chat_start
+async def start():
+    await cl.Message(content="Hi! Ask me a question about your documents.").send()
+ 
+ 
+@cl.on_message
+async def main(message: cl.Message):
+    reply = cl.Message(content="Thinking . . .")
+    await reply.send()
+ 
+    # Start the animation in the background
+    animation = asyncio.create_task(animate_thinking(reply))
+ 
+    try:
+        # Runs your function without freezing the chat page
+        answer = await cl.make_async(get_answer)(message.content)
+        if not answer:
+            answer = (
+                "The bot did not return any text. "
+                "Make sure generate_answer() uses return, not just print()."
+            )
+    except Exception as error:
+        answer = f"Something went wrong: {error}"
+    finally:
+        # Stop the animation as soon as the answer is ready
+        animation.cancel()
+        try:
+            await animation
+        except asyncio.CancelledError:
+            pass
+ 
+    # Replace the animation with the real answer
+    reply.content = str(answer)
+    await reply.update()
+ 

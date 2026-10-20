@@ -45,7 +45,7 @@ def generate_answer(question: str, context: list[dict]) -> str:
     Answer the user's question using the retrieved context below.
 
     If the context does not contain enough information to answer,
-    say that the information is unavailable.
+    say that the information is unavailable. 
 
     Retrieved context:
     {context}
@@ -65,3 +65,4 @@ def generate_answer(question: str, context: list[dict]) -> str:
     print("\n\n")
     print(response.text)
     print("\n\n")
+    return response.text
