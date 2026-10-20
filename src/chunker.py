@@ -10,7 +10,7 @@ def load_pdf_files(pdf_files, chunk_size, chunk_overlap):
     chunks = []
     for doc in pdf_files: 
         prose_docs, table_chunks = _load_pdf(doc)
-        prose_chunks = split_documents(prose_docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        prose_chunks = _split_documents(prose_docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         chunks.extend(prose_chunks + table_chunks)
 
     print(f'split {len(pdf_files)} documents into {len(chunks)} chunks')
@@ -115,13 +115,6 @@ def _page_headings(page, table_bboxes=(), ignore_top=0):
 
     return [(h["top"], h["text"]) for h in headings]
 
-
-def debug_lines(page):
-    """Print every line with its font size and boldness, to see what the PDF really contains."""
-    for l in _page_lines(page):
-        print(f'{l["top"]:6.0f}  size={l["size"]:5.1f}  bold={l["bold"]!s:5}  {l["text"][:60]}')
-
-
 def _inside(obj, bbox, pad=2):
     x0, top, x1, bottom = bbox
     return (obj["x0"] >= x0 - pad and obj["x1"] <= x1 + pad and
@@ -159,7 +152,7 @@ def table_to_chunks(rows, max_chars, title=None):
 
 ### Text splitting into chunks 
 ### Returns list of Document data types which are the chunks 
-def split_documents(documents, chunk_size, chunk_overlap):
+def _split_documents(documents, chunk_size, chunk_overlap):
         
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size = chunk_size, 

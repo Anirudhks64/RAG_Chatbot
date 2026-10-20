@@ -5,12 +5,13 @@ from rag_retriever import RAGRetriever
 from gemini_LLM_integration import build_context, generate_answer
 import time
 from pathlib import Path
+import debug
 
 if __name__ == "__main__": 
 
     start = time.perf_counter()
     
-    question = "how can I contact Azuria?"
+    question = "Are pets allowed?"
 
     print("\n")
     print("Loading PDF Files . . .")
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     print(f"Chunking {len(pdf_files)} files ...")
     print("\n")
 
-    # Load the PDF Files into chunks 
+    # Load the PDF Files into chunks
     # Stores Prose and Table content in different chunks for easy retrieval
     chunks = load_pdf_files(pdf_files, chunk_size=500, chunk_overlap=100)
     
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     # Retrieves relevant chunks from vector database 
     retrieved_chunks = rag_retriever.retrieve(question)
 
-    ## Prints retrieved chunks for debugging
+    # # Prints retrieved chunks for debugging
     # debug.print_retrieved_chunks(retrieved_chunks)
 
     # Extract information from Langchain Document Data Type to String  

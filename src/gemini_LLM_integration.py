@@ -54,9 +54,6 @@ def generate_answer(question: str, context: list[dict]) -> str:
     {question}
     """
 
-    
-
-
     response = client.models.generate_content(
         model="gemini-3.8-flash",
         contents=prompt, 
