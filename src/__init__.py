@@ -26,6 +26,7 @@ def get_answer(question: str) -> str:
     # Stores Prose and Table content in different chunks for easy retrieval
     chunks = load_pdf_files(pdf_files, chunk_size=500, chunk_overlap=100)
     
+    
     # Initialise object of class Embedding Manager
     embedding_manager = EmbeddingManager()
     
@@ -54,8 +55,9 @@ def get_answer(question: str) -> str:
     # Retrieves relevant chunks from vector database 
     retrieved_chunks = rag_retriever.retrieve(question)
 
-    # # Prints retrieved chunks for debugging
-    # debug.print_retrieved_chunks(retrieved_chunks)
+
+    # Prints retrieved chunks for debugging
+    debug.print_retrieved_chunks(retrieved_chunks)
 
     # Extract information from Langchain Document Data Type to String  
     context = build_context(retrieved_chunks)
@@ -69,8 +71,6 @@ def get_answer(question: str) -> str:
     print(f"took {time.perf_counter() - start:.2f}s")
     
     return answer
-
-
 
 THINKING_LINES = [
     "Flipping through your PDFs . . .",
@@ -104,17 +104,33 @@ async def animate_thinking(reply: cl.Message):
 async def start():
     await cl.Message(content="Hi! Ask me a question about your documents.").send()
  
- 
 @cl.on_message
 async def main(message: cl.Message):
+    # Remove the game from the previous question (if there is one)
+    old_game = cl.user_session.get("game")
+    if old_game:
+        await old_game.remove()
+
     reply = cl.Message(content="Thinking . . .")
     await reply.send()
- 
-    # Start the animation in the background
+
+    # Show the game right under the "Thinking" bubble
+    game = cl.Message(
+        content="Play while you wait! 🐦",
+        elements=[
+            cl.CustomElement(
+                name="GameFrame",
+                props={"sid": cl.context.session.id},
+                display="inline",
+            )
+        ],
+    )
+    await game.send()
+    cl.user_session.set("game", game)
+
     animation = asyncio.create_task(animate_thinking(reply))
- 
+
     try:
-        # Runs your function without freezing the chat page
         answer = await cl.make_async(get_answer)(message.content)
         if not answer:
             answer = (
@@ -124,14 +140,11 @@ async def main(message: cl.Message):
     except Exception as error:
         answer = f"Something went wrong: {error}"
     finally:
-        # Stop the animation as soon as the answer is ready
         animation.cancel()
         try:
             await animation
         except asyncio.CancelledError:
             pass
- 
-    # Replace the animation with the real answer
+
     reply.content = str(answer)
     await reply.update()
- 

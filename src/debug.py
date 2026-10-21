@@ -18,5 +18,5 @@ def print_retrieved_chunks(retrieved_chunks):
     for (i, chunk) in enumerate(retrieved_chunks, start=1): 
         print("\n")
         print(i)
-        print(chunk["content"])
+        print(chunk)
         print("\n")
