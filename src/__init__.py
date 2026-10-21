@@ -2,12 +2,13 @@ from chunker import load_pdf_files
 from embedding import EmbeddingManager
 from vector_store import VectorStore
 from rag_retriever import RAGRetriever
-from gemini_LLM_integration import build_context, generate_answer
+#from gemini_LLM_integration import build_context, generate_answer
 import time
 from pathlib import Path
 import debug
 import chainlit as cl
 import asyncio
+from ollama_LLM_integration import build_context, generate_answer
 
 def get_answer(question: str) -> str:        
     start = time.perf_counter()
@@ -60,7 +61,7 @@ def get_answer(question: str) -> str:
     context = build_context(retrieved_chunks)
 
     print("\n")
-    print("CONNECTING TO GEMINI API . . .")
+    print("CONNECTING TO MODEL . . .")
     print("\n")
 
     # Query Gemini API providing it with the question and extracted context 
