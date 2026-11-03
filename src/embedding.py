@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 class EmbeddingManager: 
     """Handles document embedding generation using Sentence Transformer"""
     
-    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5"):
+    def __init__(self, model_name: str = "BAAI/bge-m3"):
         """
         Initialize the embedding manager
 

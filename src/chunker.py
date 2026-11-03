@@ -11,6 +11,7 @@ def load_pdf_files(pdf_files, chunk_size, chunk_overlap):
     for doc in pdf_files: 
         prose_docs, table_chunks = _load_pdf(doc)
         prose_chunks = _split_documents(prose_docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        table_chunks = _prefix_source_file(table_chunks)
         chunks.extend(prose_chunks + table_chunks)
 
     print(f'split {len(pdf_files)} documents into {len(chunks)} chunks')

@@ -12,3 +12,4 @@ python-dotenv
 pdfplumber
 chainlit
 ollama
+rank-bm25

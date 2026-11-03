@@ -19,6 +19,10 @@ class VectorStore:
         self.persist_directory = persist_directory
         self.client = None
         self.collection = None
+        # Copies of everything added, used by the keyword (BM25) search
+        self.ids: List[str] = []
+        self.texts: List[str] = []
+        self.metadatas: List[dict] = []
         self._initialize_store()
 
     def _initialize_store(self):
@@ -35,9 +39,12 @@ class VectorStore:
                 pass  # nothing to delete the first time
             
             # Get or create collection
+            # "cosine" so that 1 - distance is a real similarity score
+            # (Chroma's default is squared L2 distance)
             self.collection = self.client.get_or_create_collection(
                 name=self.collection_name,
-                metadata={"description": "PDF document embeddings for RAG"}
+                metadata={"description": "PDF document embeddings for RAG"},
+                configuration={"hnsw": {"space": "cosine"}},
             )
             print(f"Vector store initialized. Collection: {self.collection_name}")
             print(f"Existing documents in collection: {self.collection.count()}")
@@ -90,6 +97,9 @@ class VectorStore:
                 metadatas=metadatas,
                 documents=documents_text
             )
+            self.ids.extend(ids)
+            self.texts.extend(documents_text)
+            self.metadatas.extend(metadatas)
             print(f"Successfully added {len(documents)} documents to vector store")
             print(f"Total documents in collection: {self.collection.count()}")
             
