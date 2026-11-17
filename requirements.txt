@@ -13,3 +13,5 @@ pdfplumber
 chainlit
 ollama
 rank-bm25
+trafilatura
+groq

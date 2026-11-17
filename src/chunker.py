@@ -1,6 +1,8 @@
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import pdfplumber
 import os
+import re
+from collections import Counter
 from langchain_core.documents import Document
 import statistics
 
@@ -27,7 +29,8 @@ def _load_pdf(path, max_table_chars=1500):
 
     with pdfplumber.open(path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
-            tables = page.find_tables()
+            found = page.find_tables()
+            tables = [t for t in found if not _is_page_frame(t, found, page)]
             bboxes = [t.bbox for t in tables]
             headings = _page_headings(page, bboxes)      
 
@@ -116,6 +119,21 @@ def _page_headings(page, table_bboxes=(), ignore_top=0):
 
     return [(h["top"], h["text"]) for h in headings]
 
+def _is_page_frame(table, all_tables, page):
+    """pdfplumber sometimes reads a border around the page as one huge 'table'
+    (the last page of both PDFs). Treating it as a table would throw away all
+    the text on that page, so a 'table' that covers most of the page, or that
+    has other tables inside it, is skipped."""
+    x0, top, x1, bottom = table.bbox
+    covers_page = (x1 - x0) * (bottom - top) > 0.6 * page.width * page.height
+
+    def is_inside_this(box):
+        return _inside({"x0": box[0], "top": box[1], "x1": box[2], "bottom": box[3]}, table.bbox)
+
+    has_tables_inside = any(is_inside_this(other.bbox) for other in all_tables if other is not table)
+    return covers_page or has_tables_inside
+
+
 def _inside(obj, bbox, pad=2):
     x0, top, x1, bottom = bbox
     return (obj["x0"] >= x0 - pad and obj["x1"] <= x1 + pad and
@@ -156,17 +174,72 @@ def table_to_chunks(rows, max_chars, title=None):
 def _split_documents(documents, chunk_size, chunk_overlap):
         
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = chunk_size, 
-        chunk_overlap = chunk_overlap, 
-        length_function = len, 
-        separators = ["\n\n", "\n", " ", ""]
+        chunk_size = chunk_size,
+        chunk_overlap = chunk_overlap,
+        length_function = len,
+        separators = ["\n\n", "\n", " ", ""],
+        add_start_index = True,  # where each chunk starts on its page (used below)
     )
 
 
     split_docs = text_splitter.split_documents(documents)
-    split_docs = _prefix_source_file(split_docs=split_docs)    
-    
+    split_docs = _add_question_titles(split_docs, documents)
+    split_docs = _prefix_source_file(split_docs=split_docs)
+
     return split_docs
+
+
+PAGE_NUMBER = re.compile(r"^Page \d+ of \d+$")
+
+
+def _is_question(line):
+    return line.strip().endswith("?")
+
+
+def _is_section(line):
+    """'3. Flights' is a section heading; '2. We register the unit ... register.' is a list step."""
+    line = line.strip()
+    return bool(re.match(r"^\d+\.\s+\S", line)) and len(line.split()) <= 7 and not line.endswith(".")
+
+
+def _add_question_titles(chunks, pages):
+    """A chunk that starts in the middle of an FAQ answer gets that FAQ's question
+    as a title ("Title: Are there any extra charges for the Maldives package?").
+    Without it, an answer cut off from its question (by a chunk or page break)
+    is almost never found, because nothing in it says what it is about."""
+    # Lines repeated on many pages are page headers, not content
+    seen_on = Counter(line.strip() for page in pages for line in set(page.page_content.splitlines()))
+    repeated = {line for line, count in seen_on.items() if count >= 3}
+
+    def content_lines(text):
+        return [l for l in text.splitlines()
+                if l.strip() and l.strip() not in repeated and not PAGE_NUMBER.match(l.strip())]
+
+    # Every question line with its position, and the question still open when each page starts
+    questions, open_at_start, last = {}, {}, {}
+    for page in pages:
+        key = (page.metadata["source_file"], page.metadata["page"])
+        open_at_start[key] = last.get(page.metadata["source_file"])
+        offset, found = 0, []
+        for line in page.page_content.splitlines(keepends=True):
+            if _is_question(line) and line.strip() not in repeated:
+                found.append((offset, line.strip()))
+            offset += len(line)
+        questions[key] = found
+        if found:
+            last[page.metadata["source_file"]] = found[-1][1]
+
+    for chunk in chunks:
+        lines = content_lines(chunk.page_content)
+        if not lines or _is_question(lines[0]) or _is_section(lines[0]):
+            continue  # the chunk starts with its own question (or a new section)
+        key = (chunk.metadata["source_file"], chunk.metadata["page"])
+        start = chunk.metadata.get("start_index", 0)
+        before = [q for pos, q in questions.get(key, []) if pos < start]
+        question = before[-1] if before else open_at_start.get(key)
+        if question:
+            chunk.page_content = f"Title: {question}\n{chunk.page_content}"
+    return chunks
 
 
 # Prefixes Document name to page.content so database can access source file name during retrieval

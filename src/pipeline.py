@@ -4,6 +4,7 @@ and the per-question steps (prepare question, cache, search, answer, memory).
 The chat screen is in chat_ui.py.
 """
 from chunker import load_pdf_files
+from web_loader import load_websites
 from embedding import EmbeddingManager
 from vector_store import VectorStore
 from rag_retriever import RAGRetriever
@@ -12,20 +13,45 @@ from pathlib import Path
 import debug
 import chainlit as cl
 import asyncio
-from ollama_LLM_integration import build_context, generate_answer, stream_answer
+# Which model answers. Groq is on; to go back to the local Ollama model,
+# comment out the 3 Groq lines and remove the # from the 3 Ollama lines.
+from groq_LLM_integration import build_context, generate_answer, stream_answer
+from groq_LLM_integration import prepare_question, same_question, checked_translation, TranslationFailed
+from groq_LLM_integration import contact_details, describe_language
+#from ollama_LLM_integration import build_context, generate_answer, stream_answer
+#from ollama_LLM_integration import prepare_question, same_question, checked_translation, TranslationFailed
+#from ollama_LLM_integration import contact_details, describe_language
 #from gemini_LLM_integration import build_context, generate_answer, stream_answer
-from ollama_LLM_integration import prepare_question, same_question, checked_translation, TranslationFailed
 from answer_cache import AnswerCache
 
-print("\nLoading PDF Files . . .\n")
+# Where the bot gets its text from. Both can be on at the same time.
+# TRANSACCELORS ONLY for now: the 2 PDFs are Azuria and Wayfarra, so PDFs are off.
+# TransAccelors comes from its website (data/websites.txt). Put back True to read the PDFs.
+# USE_PDFS = True       # every PDF inside data/
+USE_PDFS = False
+USE_WEBSITES = True   # every link listed in data/websites.txt
+WEBSITES_FILE = "data/websites.txt"
 
-# Find all PDF files inside the data folder
-pdf_files = list(Path("data").glob("**/*.pdf"))
+chunks = []
 
-print(f"Chunking {len(pdf_files)} files ...\n")
+if USE_PDFS:
+    print("\nLoading PDF Files . . .\n")
 
-# Split the PDFs into chunks (prose and tables are stored separately)
-chunks = load_pdf_files(pdf_files, chunk_size=500, chunk_overlap=100)
+    # Find all PDF files inside the data folder
+    pdf_files = list(Path("data").glob("**/*.pdf"))
+
+    print(f"Chunking {len(pdf_files)} files ...\n")
+
+    # Split the PDFs into chunks (prose and tables are stored separately)
+    chunks += load_pdf_files(pdf_files, chunk_size=500, chunk_overlap=100)
+
+if USE_WEBSITES:
+    # Download the listed pages and chunk them the same way
+    chunks += load_websites(WEBSITES_FILE, chunk_size=500, chunk_overlap=100)
+
+if not chunks:
+    raise RuntimeError("Nothing to read: put PDFs in data/ or links in data/websites.txt "
+                       "(and check USE_PDFS / USE_WEBSITES in pipeline.py)")
 
 # Load the embedding model 
 embedding_manager = EmbeddingManager()
@@ -81,28 +107,79 @@ def remember(question: str, answer: str):
     cl.user_session.set("history", history[-MAX_HISTORY:])
 
 
-def retrieve_context(search_question: str) -> str:
+MAX_CHUNKS = 7    # most chunks sent to the model when a question has several parts
+PART_CHUNKS = 2   # best chunks kept for each part
+PART_RERANK = 6   # only the 6 best matches of a part are reranked (keeps it fast)
+
+
+def take_turns(results: list, limit: int) -> list:
+    """Best chunk of every search first, then the second best of every search, ...
+    so each part of the question gets its own chunks. No duplicates."""
+    chosen, seen = [], set()
+    for rank in range(max(len(found) for found in results)):
+        for found in results:
+            if rank < len(found) and found[rank]["id"] not in seen:
+                seen.add(found[rank]["id"])
+                chosen.append(found[rank])
+                if len(chosen) == limit:
+                    return chosen
+    return chosen
+
+
+def retrieve_context(prep: dict, question: str = "") -> str:
+    """Searches the PDFs for a prepared question (see prepare_question).
+    When the company is known, only its own chunks are used (unless the label looks wrong).
+    A question with several parts gets one extra search per part, so no part is left out.
+    Ends with the contact details of that company only."""
     print("\nRetrieving Relevant Chunks . . .\n")
-    retrieved_chunks = rag_retriever.retrieve(search_question)
+    company = prep.get("company")
+    query = prep.get("query") or prep["search"]
+    # The keyword search also gets the other wording: the rewrite fixes typos
+    # ("Azura"), the user's own words keep anything the rewrite left out.
+    # Not for "say that in English", whose words are not about the topic.
+    if prep.get("redo"):
+        extra_words = ""
+    else:
+        extra_words = prep["search"] if query != prep["search"] else question
+    results = [rag_retriever.retrieve(query, company=company, extra_words=extra_words)]
+    # If the company label was wrong, the best chunk comes from another PDF:
+    # then search everything for the topics too, and show all contact details
+    top = results[0][0]["metadata"].get("source_file", "").lower() if results[0] else ""
+    if company and top and not top.startswith(company):
+        company = None
+    for part in prep.get("parts", []):
+        results.append(rag_retriever.retrieve(part, top_k=PART_CHUNKS, candidates=10,
+                                              company=company, rerank_limit=PART_RERANK))
+    retrieved_chunks = take_turns(results, MAX_CHUNKS) if len(results) > 1 else results[0]
     debug.print_retrieved_chunks(retrieved_chunks)
-    return build_context(retrieved_chunks)
+    return build_context(retrieved_chunks) + "\n\n" + contact_details(company)
 
 
-def get_context(question: str, history=None, last_search=None):
+def get_context(question: str, history=None, last=None):
     """Returns (context, search_question).
     Search in English (the PDFs are English), answer in the user's language.
     Follow-ups like "what about it?" are filled in from the history first,
-    and "say that in English" reuses last_search."""
-    search_question = prepare_question(question, history, last_search)["search"]
-    return retrieve_context(search_question), search_question
+    and "say that in English" reuses the previous search (last)."""
+    prep = prepare_question(question, history, last)
+    return retrieve_context(prep, question), prep["search"]
 
 
 # Answers that are error messages must never be saved in the cache
-ERROR_MARKERS = ("I could not reach the local model", "Gemini is busy or not responding")
+ERROR_MARKERS = ("I could not reach the local model", "Gemini is busy or not responding",
+                 "I could not reach the Groq API")
 
 
 def is_error(answer: str) -> bool:
     return any(marker in answer for marker in ERROR_MARKERS)
+
+
+# "Not found" answers are often a search miss: don't save them in the cache,
+# so the next person asking gets a fresh search instead of the same miss
+NOT_FOUND_MARKERS = ("could not find", "couldn't find", "couldn’t find")
+
+
+def is_not_found(answer: str) -> bool:
+    return any(marker in answer.lower() for marker in NOT_FOUND_MARKERS)
 
 
 async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first_piece=None) -> str:
@@ -116,16 +193,19 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
     """
     start = time.perf_counter()
     history = cl.user_session.get("history") or []
-    last_search = cl.user_session.get("last_search")
+    last_prep = cl.user_session.get("last_prep")
 
-    prep = await cl.make_async(prepare_question)(question, history, last_search)
-    search_question, language = prep["search"], prep["language"]
-    cl.user_session.set("last_search", search_question)
+    prep = await cl.make_async(prepare_question)(question, history, last_prep)
+    language = prep["language"]
+    # Cache key: what the user typed (first English message), else the English rewrite.
+    # The rewrite words the same message differently each time and can drop details.
+    search_question = prep.get("query") or prep["search"]
+    cl.user_session.set("last_prep", prep)  # reused by "say that in English"
 
     # "Say that in English" / "make it shorter" depend on the previous answer,
     # so they never use or fill the cache. Same if the language is unknown.
     use_cache = not prep["redo"] and bool(language)
-    cached = await cl.make_async(answer_cache.lookup)(search_question) if use_cache else None
+    cached = await cl.make_async(answer_cache.lookup)(search_question, prep.get("company")) if use_cache else None
 
     if cached and language in cached["answers"]:
         print(f"Cache hit ({language}): instant answer")
@@ -145,7 +225,11 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
     while True:
         if pieces is None:
             # Normal path: search the PDFs and write a fresh answer
-            context = await cl.make_async(retrieve_context)(search_question)
+            context = await cl.make_async(retrieve_context)(prep, question)
+            if language:
+                # Tell the model the reply language: left to guess, it once
+                # answered an English question in Marathi
+                context += f"\n\nReply language: {describe_language(language)}"
             print("\nCONNECTING TO MODEL (streaming) . . .\n")
             pieces = stream_answer(question, context, history)
         try:
@@ -168,9 +252,10 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
     print(f"took {time.perf_counter() - start:.2f}s")
     remember(question, answer)
 
-    if use_cache and answer and not is_error(answer) and not already_saved:
+    if use_cache and answer and not is_error(answer) and not is_not_found(answer) and not already_saved:
         # New question -> new entry; translated answer -> new language for that entry
-        await cl.make_async(answer_cache.add)(search_question, language, answer, cached)
+        await cl.make_async(answer_cache.add)(search_question, language, answer, cached,
+                                             prep.get("company"))
     return answer
 
 

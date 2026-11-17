@@ -1,0 +1,12 @@
+# Websites the chatbot reads, one per line: the company, a space, then the link.
+# The company must be one of the keys in COMPANIES (src/ollama_LLM_integration.py):
+# azuria, wayfarra or transaccelors. A new company must be added there first.
+# A home-page link (like https://www.example.com/) reads EVERY page of that website.
+# A deeper link (like https://www.example.com/faq) reads only that one page.
+# Lines starting with # are ignored. Restart the app after changing this file.
+#
+# Examples:
+# azuria https://www.example.com/azuria-faq
+# wayfarra https://www.example.com/wayfarra-visa-rules
+
+transaccelors https://transaccelors.com/

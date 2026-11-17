@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Set
 
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
@@ -10,6 +10,12 @@ from vector_store import VectorStore
 
 RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"  # free, runs locally, multilingual
 RRF_K = 60  # standard constant for merging ranked lists
+
+# A question's company label is trusted when that company's best chunk scores at least
+# this share of the best chunk overall. Measured on 28 test questions: with the right
+# label the share was 0.5 or more, with a wrong label 0.01 or less (except one topic
+# both companies cover).
+OWN_PDF_RATIO = 0.25
 
 
 def tokenize(text: str) -> List[str]:
@@ -41,6 +47,16 @@ class RAGRetriever:
         self.reranker = CrossEncoder(RERANKER_MODEL, max_length=512)
         print("Reranker loaded.\n")
 
+    # ---------- 0. which PDFs to search ----------
+    def _files_of(self, company: Optional[str]) -> Optional[Set[str]]:
+        """The PDF files of one company (their names start with it, e.g. 'azuria').
+        None means search all PDFs: company unknown, or no file matches."""
+        if not company:
+            return None
+        files = {m.get("source_file", "") for m in self.metadatas}
+        files = {f for f in files if f.lower().startswith(company.lower())}
+        return files or None
+
     # ---------- 1. meaning search ----------
     def _dense_search(self, query: str, n: int) -> List[Dict[str, Any]]:
         query_embedding = self.embedding_manager.generate_embeddings([query])[0]
@@ -66,10 +82,13 @@ class RAGRetriever:
         ]
 
     # ---------- 2. keyword search ----------
-    def _keyword_search(self, query: str, n: int) -> List[Dict[str, Any]]:
+    def _keyword_search(self, query: str, n: int, extra_words: str = "") -> List[Dict[str, Any]]:
         if self.bm25 is None:
             return []
-        scores = self.bm25.get_scores(tokenize(query))
+        words = tokenize(query)
+        # The user's own words too, in case the rewritten question dropped one
+        words += [w for w in dict.fromkeys(tokenize(extra_words)) if w not in words]
+        scores = self.bm25.get_scores(words)
         best = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:n]
         return [
             {
@@ -101,6 +120,9 @@ class RAGRetriever:
         top_k: int = 5,
         score_threshold: float = 0.0,
         candidates: int = 20,
+        company: Optional[str] = None,
+        extra_words: str = "",
+        rerank_limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Args:
@@ -108,23 +130,42 @@ class RAGRetriever:
             top_k: How many chunks to return after reranking
             score_threshold: Minimum reranker score (0 to 1) to keep a chunk
             candidates: How many chunks each search returns before merging
+            company: the business the question is about (e.g. 'azuria'). Only that company's
+                chunks are returned, unless its PDF matches much worse than another PDF: then
+                the label is probably wrong and chunks from all PDFs are returned. None = all PDFs.
+            extra_words: more words for the keyword search only (the user's original message)
+            rerank_limit: only rerank this many of the best merged chunks (the reranker is
+                the slow step, about 0.07s per chunk); None = rerank all of them
         """
-        print(f"Retrieving documents for query: '{query}'")
+        files = self._files_of(company)
+        print(f"Retrieving documents for query: '{query}'"
+              + (f" (prefer {', '.join(sorted(files))})" if files else ""))
         try:
             dense = self._dense_search(query, candidates)
-            keyword = self._keyword_search(query, candidates)
+            keyword = self._keyword_search(query, candidates, extra_words)
             merged = self._merge(dense, keyword)
             print(f"Meaning search: {len(dense)}, keyword search: {len(keyword)}, merged: {len(merged)}")
 
             if not merged:
                 print("No documents found")
                 return []
+            if rerank_limit:
+                merged = merged[:rerank_limit]  # already sorted best first by the merge
 
             # 4. reranker reads question + chunk together and scores the match
             scores = self.reranker.predict([(query, d["content"]) for d in merged])
             for doc, score in zip(merged, scores):
                 doc["rerank_score"] = float(score)
             merged.sort(key=lambda d: d["rerank_score"], reverse=True)
+
+            # 5. keep only the company's own chunks (no mixing of the two businesses),
+            #    unless its best chunk is far worse than the best overall (wrong label)
+            if files:
+                own = [d for d in merged if d["metadata"].get("source_file") in files]
+                if own and own[0]["rerank_score"] >= OWN_PDF_RATIO * merged[0]["rerank_score"]:
+                    merged = own
+                else:
+                    print(f"'{company}' PDF matches much worse than another PDF: using all PDFs")
 
             retrieved_docs = []
             for doc in merged:
