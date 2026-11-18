@@ -98,13 +98,14 @@ def answer_one(question: str) -> str:
 MAX_HISTORY = 3  # past question/answer pairs remembered per chat
 
 
-def remember(question: str, answer: str):
-    """Saves this exchange in this chat's memory (each browser tab has its own)."""
+def remember(session: dict, question: str, answer: str):
+    """Saves this exchange in this chat's memory (each chat has its own session dict:
+    one per browser tab in Chainlit, one per session_id in the API)."""
     if not answer:
         return
-    history = cl.user_session.get("history") or []
+    history = session.get("history") or []
     history.append((question, answer))
-    cl.user_session.set("history", history[-MAX_HISTORY:])
+    session["history"] = history[-MAX_HISTORY:]
 
 
 MAX_CHUNKS = 7    # most chunks sent to the model when a question has several parts
@@ -183,8 +184,29 @@ def is_not_found(answer: str) -> bool:
 
 
 async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first_piece=None) -> str:
-    """Streams the answer into msg as it arrives, then saves it to this chat's
-    memory and to the answer cache. Returns the full answer.
+    """Chainlit chat page: streams the answer into msg as it arrives. Returns the full answer.
+    The work is done by answer_pieces (shared with the API in api.py)."""
+    # This browser tab's memory, kept in Chainlit's session
+    session = {"history": cl.user_session.get("history") or [],
+               "last_prep": cl.user_session.get("last_prep")}
+    answer = ""
+    try:
+        async for piece in answer_pieces(question, session):
+            if not answer and on_first_piece:
+                await on_first_piece()
+            answer += piece
+            msg.content = prefix + answer
+            await msg.update()
+    finally:
+        cl.user_session.set("history", session["history"])
+        cl.user_session.set("last_prep", session["last_prep"])
+    return answer
+
+
+async def answer_pieces(question: str, session: dict):
+    """Yields the answer piece by piece as it is written, then saves it to this
+    chat's memory (session) and to the answer cache. Used by the Chainlit page
+    and by the API. session: {"history": [...], "last_prep": ...}, updated here.
 
     Three ways to answer:
       1. cache hit, same language   -> saved answer, instantly
@@ -192,20 +214,20 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
       3. no cache hit               -> full search + answer, then saved
     """
     start = time.perf_counter()
-    history = cl.user_session.get("history") or []
-    last_prep = cl.user_session.get("last_prep")
+    history = session.get("history") or []
+    last_prep = session.get("last_prep")
 
-    prep = await cl.make_async(prepare_question)(question, history, last_prep)
+    prep = await asyncio.to_thread(prepare_question, question, history, last_prep)
     language = prep["language"]
     # Cache key: what the user typed (first English message), else the English rewrite.
     # The rewrite words the same message differently each time and can drop details.
     search_question = prep.get("query") or prep["search"]
-    cl.user_session.set("last_prep", prep)  # reused by "say that in English"
+    session["last_prep"] = prep  # reused by "say that in English"
 
     # "Say that in English" / "make it shorter" depend on the previous answer,
     # so they never use or fill the cache. Same if the language is unknown.
     use_cache = not prep["redo"] and bool(language)
-    cached = await cl.make_async(answer_cache.lookup)(search_question, prep.get("company")) if use_cache else None
+    cached = await asyncio.to_thread(answer_cache.lookup, search_question, prep.get("company")) if use_cache else None
 
     if cached and language in cached["answers"]:
         print(f"Cache hit ({language}): instant answer")
@@ -225,7 +247,7 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
     while True:
         if pieces is None:
             # Normal path: search the PDFs and write a fresh answer
-            context = await cl.make_async(retrieve_context)(prep, question)
+            context = await asyncio.to_thread(retrieve_context, prep, question)
             if language:
                 # Tell the model the reply language: left to guess, it once
                 # answered an English question in Marathi
@@ -243,20 +265,16 @@ async def stream_into(msg: cl.Message, question: str, prefix: str = "", on_first
             continue
         if piece is None:
             break
-        if not answer and on_first_piece:
-            await on_first_piece()
         answer += piece
-        msg.content = prefix + answer
-        await msg.update()
+        yield piece
 
     print(f"took {time.perf_counter() - start:.2f}s")
-    remember(question, answer)
+    remember(session, question, answer)
 
     if use_cache and answer and not is_error(answer) and not is_not_found(answer) and not already_saved:
         # New question -> new entry; translated answer -> new language for that entry
-        await cl.make_async(answer_cache.add)(search_question, language, answer, cached,
-                                             prep.get("company"))
-    return answer
+        await asyncio.to_thread(answer_cache.add, search_question, language, answer, cached,
+                                prep.get("company"))
 
 
 def split_questions(text: str) -> list:

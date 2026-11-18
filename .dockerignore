@@ -1,0 +1,12 @@
+# Never put the API key in the image: on Hugging Face it is a Space secret
+.env
+.venv
+.git
+**/__pycache__
+**/.DS_Store
+# Rebuilt at every start
+data/vector_store
+# Not needed to run the API
+data/pdf
+eval
+docs

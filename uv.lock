@@ -857,6 +857,7 @@ dependencies = [
     { name = "chainlit" },
     { name = "chromadb" },
     { name = "faiss-cpu" },
+    { name = "fastapi" },
     { name = "google-genai" },
     { name = "groq" },
     { name = "ipykernel" },
@@ -872,6 +873,7 @@ dependencies = [
     { name = "rank-bm25" },
     { name = "sentence-transformers" },
     { name = "trafilatura" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -879,6 +881,7 @@ requires-dist = [
     { name = "chainlit", specifier = ">=2.12.0" },
     { name = "chromadb", specifier = ">=1.5.9" },
     { name = "faiss-cpu", specifier = ">=1.15.1" },
+    { name = "fastapi", specifier = ">=0.156.2" },
     { name = "google-genai", specifier = ">=2.29.0" },
     { name = "groq", specifier = ">=1.7.0" },
     { name = "ipykernel", specifier = ">=7.4.0" },
@@ -894,6 +897,7 @@ requires-dist = [
     { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
     { name = "trafilatura", specifier = ">=2.3.1" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 
 [[package]]

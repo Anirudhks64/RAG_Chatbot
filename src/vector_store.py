@@ -7,7 +7,9 @@ from typing import List, Any
 class VectorStore:
     """Manages document embeddings in a ChromaDB vector store"""
     
-    def __init__(self, collection_name: str = "pdf_documents", persist_directory: str = "../data/vector_store"):
+    # Old path pointed outside the project folder when the app is started from it:
+    # def __init__(self, collection_name: str = "pdf_documents", persist_directory: str = "../data/vector_store"):
+    def __init__(self, collection_name: str = "pdf_documents", persist_directory: str = "data/vector_store"):
         """
         Initialize the vector store
         

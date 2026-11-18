@@ -15,3 +15,5 @@ ollama
 rank-bm25
 trafilatura
 groq
+fastapi
+uvicorn
