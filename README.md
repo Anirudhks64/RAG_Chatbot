@@ -22,6 +22,8 @@ src/
 └── lite/     small version (fits 512 MB): small 8-bit English models, API, Dockerfile
 ```
 
+**To change how the chatbot answers** (rules, company info, contact details), edit `src/shared/prompts.py`.
+
 Questions are rewritten into English before the search, so the lite version's English-only
 models still serve every language. In tests the lite answers were close to the full ones.
 

@@ -12,6 +12,7 @@ python-dotenv==1.2.4
 langchain-text-splitters==1.1.3
 langchain-core==1.6.6
 pydantic==2.13.5
-# Only imported, not used by the lite API (chunker.py / ollama_LLM_integration.py import them)
+# Only imported, not used by the lite API (chunker.py imports it)
 pdfplumber==0.11.10
-ollama==0.6.3
+# ollama is no longer needed: the prompts moved to src/shared/prompts.py
+# ollama==0.6.3

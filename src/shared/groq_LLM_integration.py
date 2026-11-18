@@ -4,7 +4,7 @@ but every model call goes to the Groq API instead of the local Ollama app.
 
 Switch between them in pipeline.py (the import lines at the top).
 The prompts, the contact details and the small helper functions are imported
-from ollama_LLM_integration.py, so both versions always behave the same way.
+from prompts.py (shared with the Ollama version), so both versions always behave the same way.
 
 Needs GROQ_API_KEY in the .env file (free key: https://console.groq.com/keys).
 """
@@ -14,7 +14,8 @@ import time
 from dotenv import load_dotenv
 from groq import Groq
 
-from ollama_LLM_integration import (
+# OLD: from ollama_LLM_integration import (  -> that also loaded the Ollama library
+from prompts import (
     # prompts
     SYSTEM_PROMPT, TRANSLATE_PROMPT, SAME_QUESTION_PROMPT, TRANSLATE_ANSWER_PROMPT, SAME_TOPIC,
     # helpers that do not call a model (re-exported for pipeline.py)
@@ -161,7 +162,7 @@ def same_question(a: str, b: str) -> bool:
 
 def prepare_question(question: str, history=None, last=None) -> dict:
     """Works out the English search question, reply language, company and topics.
-    Exactly the same as prepare_question in ollama_LLM_integration.py (see there)."""
+    Exactly the same as prepare_question in ollama_LLM_integration.py."""
     start = time.perf_counter()
     result = {"search": question, "language": None, "redo": False, "company": None, "parts": []}
     history = (history or [])[-HISTORY_TURNS:]
