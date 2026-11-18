@@ -140,7 +140,15 @@ def find_all_pages(home_url, cache_dir):
         print(f"Sitemap search failed for {home}: {error}")
         pages = []
     how = "sitemap"
-    if not pages:
+    # OLD: without the sitemap it always followed links, which finds fewer pages
+    # if not pages:
+    #     pages = _follow_links(home, cache_dir)
+    #     how = "following the site's links"
+    if not pages and saved_list.exists():
+        # Sitemap not reachable (e.g. the server is blocked): use the full page list saved earlier
+        pages = saved_list.read_text(encoding="utf-8").split()
+        how = "page list saved earlier (sitemap not reachable)"
+    elif not pages:
         pages = _follow_links(home, cache_dir)
         how = "following the site's links"
     pages = list(dict.fromkeys([home] + pages))  # home page first, no doubles

@@ -1,6 +1,6 @@
 .venv/
 .env
-data/web_cache/
+# data/web_cache/   <- now on GitHub: Render uses this saved copy of the website if downloads fail
 __pycache__/
 .DS_Store
 data/vector_store/
