@@ -1,3 +1,7 @@
 .venv/
 .env
 data/web_cache/
+__pycache__/
+.DS_Store
+data/vector_store/
+.claude/settings.local.json

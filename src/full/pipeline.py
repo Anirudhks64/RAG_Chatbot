@@ -3,6 +3,11 @@ Everything except the chat screen: loading the PDFs and models at startup,
 and the per-question steps (prepare question, cache, search, answer, memory).
 The chat screen is in chat_ui.py.
 """
+import sys
+from pathlib import Path
+# The code both versions use (website loader, Groq, prompts, answer cache) is in src/shared
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
+
 from chunker import load_pdf_files
 from web_loader import load_websites
 from embedding import EmbeddingManager

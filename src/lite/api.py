@@ -1,9 +1,9 @@
 """
-The chatbot as an API: a website (or any app) sends a question, the API sends back the answer.
+LITE version of src/full/api.py (small models, fits a 512 MB server). The chatbot as an API: a website (or any app) sends a question, the API sends back the answer.
 Same search, cache and Groq answers as the Chainlit chat page (both use pipeline.py).
 
 Start it from the project folder:
-    uvicorn api:app --app-dir src --host 0.0.0.0 --port 8000
+    uvicorn api:app --app-dir src/lite --host 0.0.0.0 --port 8000
 Then open http://localhost:8000/docs to try it in the browser.
 
 Endpoints:
@@ -33,7 +33,7 @@ from pipeline import answer_pieces
 MAX_QUESTION_CHARS = 2000  # longer questions are refused (protects the Groq limits)
 MAX_SESSIONS = 1000        # oldest chats are forgotten after this
 
-app = FastAPI(title="TransAccelors chatbot API")
+app = FastAPI(title="TransAccelors chatbot API (lite)")
 
 # Which websites may call the API from a browser. "*" = any website (fine while testing).
 # Later set ALLOWED_ORIGINS, e.g. "https://transaccelors.com,https://www.transaccelors.com"
@@ -109,6 +109,6 @@ async def ask_stream(body: Question):
                              headers={"X-Session-Id": session_id})
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])  # HEAD too, for uptime monitors
 async def health():
     return {"status": "ok"}
