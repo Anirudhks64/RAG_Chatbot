@@ -172,7 +172,8 @@ def get_context(question: str, history=None, last=None):
 
 # Answers that are error messages must never be saved in the cache
 ERROR_MARKERS = ("I could not reach the local model", "Gemini is busy or not responding",
-                 "I could not reach the Groq API")
+                 "I could not reach the Groq API",
+                 "I'm getting a lot of questions right now")  # the Groq busy message
 
 
 def is_error(answer: str) -> bool:

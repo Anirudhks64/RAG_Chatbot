@@ -39,8 +39,19 @@ SYSTEM_PROMPT = (
     # "4. If you cannot answer in any way, for any reason, ALWAYS print the contact details "
     # "(they are given at the end of the context).\n"
     # "5. When in doubt, print the contact details. It is better to show them too often than too rarely.\n"
-    "2. If the answer is not in the context, say you could not find it in the documents "
-    "and then print the contact details.\n"
+    # OLD rule 2: for "are you a catering service?" it said "could not find", as if they might be
+    # "2. If the answer is not in the context, say you could not find it in the documents "
+    # "and then print the contact details.\n"
+    "2. If the answer is not in the context: only if the user asks whether the business offers "
+    "something from a COMPLETELY different industry (see 'About the business' at the end of the "
+    "context; for an AI company: food, catering, selling physical products, building houses, travel), "
+    "say clearly that it does not offer that and say in one sentence what it does instead. "
+    "'About the business' is NOT a complete list: something missing from it may still be offered. "
+    "So never say 'no' to anything in or near the business's own field (for an AI company: any AI, data, "
+    "software, app or web development, IT, automation, chatbot, analytics, cybersecurity, training or "
+    "hiring service). For those, for details like a price, salary or date, and whenever you are not sure, "
+    "say you could not find it in the documents. "
+    "In all these cases then print the contact details.\n"
     "3. If the question is not about the business at all (random topics like the weather, sports, "
     "general knowledge, coding help), say briefly that you can only help with questions about the business "
     "and then print the contact details.\n"
@@ -92,12 +103,35 @@ COMPANIES = {
 }
 
 
+# What each business does, in one line. Added to every question's context, so the model
+# can say "no, we don't do that" to questions about things the business clearly doesn't do
+# (the search finds nothing for those, so without this it could only say "could not find").
+ABOUT = {
+    # TRANSACCELORS ONLY for now: remove the # from these 2 lines to bring them back
+    # "azuria": "Azuria Properties is a Dubai property developer (apartments, townhouses and villas, "
+    #           "off-plan sales, payment plans, handover, service charges, resale).",
+    # "wayfarra": "Wayfarra Holidays is a travel agency (flights, hotels, holiday packages, visas, "
+    #             "travel insurance, WayCash, refunds).",
+    "transaccelors": "TransAccelors is an AI, data and technology company in Bengaluru and Dubai: "
+                     "AI and data consulting, custom AI solutions built for a business's problems "
+                     "(for example AI agents / chatbots that answer customer questions and complete tasks, "
+                     "and automation), the FinAccelors AI financial analysis product, "
+                     "the AI Immersion Lab, AI labs for schools and colleges, hiring solutions "
+                     "(AI/ML talent), careers, and a blog about AI. "
+                     "This list is not complete.",
+}
+
+
 def contact_details(company=None) -> str:
-    """The contact line given to the model: only that business's, or all if not known."""
-    lines = [COMPANIES[company]] if company in COMPANIES else list(COMPANIES.values())
+    """What the business does + its contact line, given to the model at the end of the context.
+    Only that business's, or all of them if the business is not known."""
+    keys = [company] if company in COMPANIES else list(COMPANIES)
+    about = " ".join(ABOUT[k] for k in keys if k in ABOUT)
+    lines = [COMPANIES[k] for k in keys]
     # return "Contact details: " + " OR ".join(lines)
     # The label says when to use them, so the model does not add them to every answer
-    return ("Contact details (ONLY for rules 2, 3 and 4, or if the user asks how to contact us): "
+    return ((f"About the business: {about}\n\n" if about else "")
+            + "Contact details (ONLY for rules 2, 3 and 4, or if the user asks how to contact us): "
             + " OR ".join(lines))
 
 

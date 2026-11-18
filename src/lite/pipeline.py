@@ -92,7 +92,8 @@ def retrieve_context(prep: dict, question: str = "") -> str:
 
 
 ERROR_MARKERS = ("I could not reach the local model", "Gemini is busy or not responding",
-                 "I could not reach the Groq API")
+                 "I could not reach the Groq API",
+                 "I'm getting a lot of questions right now")  # the Groq busy message
 NOT_FOUND_MARKERS = ("could not find", "couldn't find", "couldn’t find")
 
 

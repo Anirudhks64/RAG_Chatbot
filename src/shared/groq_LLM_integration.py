@@ -33,28 +33,55 @@ if not api_key:
 # MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
-# Give up after 30s and retry twice, so a busy server shows an error instead of hanging
+# When MODEL fails (usually its daily limit on the free plan), the same request is sent to
+# this smaller model, which has its own separate limit: visitors still get an answer.
+FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-20b")
+
+# Give up after 30s, so a busy server shows a message instead of hanging
 client = Groq(api_key=api_key, timeout=30, max_retries=2)
 
-# Pipeline.py checks for this text, so error replies are never saved in the answer cache
-ERROR_TEXT = "I could not reach the Groq API"
+# OLD: showed the raw Groq error (organization id, key name, limits) to the visitor
+# ERROR_TEXT = "I could not reach the Groq API"
+# def _error(error) -> str:
+#     return f"{ERROR_TEXT}. Check your internet and GROQ_API_KEY. Details: {error}"
+
+# What the visitor sees when both models fail. The details only go to the server logs.
+BUSY_MESSAGE = ("Sorry, I'm getting a lot of questions right now and can't answer at the moment. "
+                "Please try again in a few minutes, or contact us at teamtransaccelors@transaccelors.com "
+                "or https://transaccelors.com/contact-us.")
+# pipeline.py checks for this text, so this message is never saved in the answer cache
+ERROR_TEXT = "I'm getting a lot of questions right now"
 
 
 def _error(error) -> str:
-    return f"{ERROR_TEXT}. Check your internet and GROQ_API_KEY. Details: {error}"
+    print(f"GROQ FAILED (main and fallback model), visitor gets the busy message. Details: {error}")
+    return BUSY_MESSAGE
 
 
-def _chat(messages, effort="medium", max_tokens=2048, stream=False):
-    """One Groq call. effort: how long the model thinks before answering
-    ('low' for the quick helper steps, like think='low' in the Ollama version)."""
-    return client.chat.completions.create(
-        model=MODEL,
+def _create(model, messages, effort, max_tokens, stream, retries):
+    return client.with_options(max_retries=retries).chat.completions.create(
+        model=model,
         messages=messages,
         reasoning_effort=effort,
         include_reasoning=False,  # only the answer text comes back, not the model's thinking
         max_completion_tokens=max_tokens,
         stream=stream,
     )
+
+
+def _chat(messages, effort="medium", max_tokens=2048, stream=False):
+    """One Groq call. effort: how long the model thinks before answering
+    ('low' for the quick helper steps, like think='low' in the Ollama version).
+    If MODEL fails, the same call goes to FALLBACK_MODEL; if that fails too, the error is raised."""
+    try:
+        # No waiting and retrying on the main model: a limit error goes straight to the fallback
+        return _create(MODEL, messages, effort, max_tokens, stream, retries=0)
+    except Exception as error:
+        print(f"Groq {MODEL} failed ({type(error).__name__}): {error}")
+        if not FALLBACK_MODEL or FALLBACK_MODEL == MODEL:
+            raise
+        print(f"Falling back to {FALLBACK_MODEL}")
+        return _create(FALLBACK_MODEL, messages, effort, max_tokens, stream, retries=1)
 
 
 def _stream(messages, label: str, effort="medium"):
@@ -72,7 +99,8 @@ def _stream(messages, label: str, effort="medium"):
                 got_any = True
                 yield piece
     except Exception as error:
-        yield _error(error)
+        # If part of the answer was already shown, the message goes on a new line below it
+        yield ("\n\n" if got_any else "") + _error(error)
 
 
 # ======================================================================

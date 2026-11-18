@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TransAccelors Chat Test</title>
+<!-- Turns the answers' Markdown (tables, bold, lists) into HTML, and cleans it so it is safe to show -->
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f6fa; --panel: #ffffff; --text: #1b2330; --muted: #6b7486; --border: #e2e6ee;
+    --accent: #1f5eff; --accent-text: #ffffff; --bot: #f1f4f9; --error: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f131a; --panel: #171c25; --text: #e6e9ef; --muted: #98a1b3; --border: #2a3140;
+      --accent: #4c7dff; --accent-text: #ffffff; --bot: #1f2632; --error: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 16px; height: 100dvh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .status { font-size: 13px; color: var(--muted); }
+  header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  header .dot.ok { background: #2e9d5b; } header .dot.bad { background: var(--error); }
+  header select { font: inherit; font-size: 13px; color: var(--text); background: var(--panel);
+                  border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; }
+  button.ghost { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+                 padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .chat { flex: 1; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+          padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-text); border-bottom-right-radius: 4px; white-space: pre-wrap; }
+  .msg.bot { align-self: flex-start; background: var(--bot); border-bottom-left-radius: 4px; }
+  .msg.bot p { margin: 0 0 8px; } .msg.bot p:last-child { margin-bottom: 0; }
+  .msg.bot ul, .msg.bot ol { margin: 4px 0 8px; padding-left: 20px; }
+  .msg.bot .table-wrap { overflow-x: auto; margin: 6px 0; }
+  .msg.bot table { border-collapse: collapse; font-size: 14px; }
+  .msg.bot th, .msg.bot td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+  .msg.bot th { background: var(--panel); }
+  .msg.bot a { color: var(--accent); }
+  .msg.error { color: var(--error); }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .typing { color: var(--muted); font-style: italic; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0 0; }
+  .chips button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 999px;
+                  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  form { display: flex; gap: 8px; padding-top: 10px; }
+  textarea { flex: 1; resize: none; min-height: 46px; max-height: 140px; padding: 12px; border-radius: 12px;
+             border: 1px solid var(--border); background: var(--panel); color: var(--text); font: inherit; }
+  form button { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 12px; padding: 0 18px;
+                font: inherit; font-weight: 600; cursor: pointer; }
+  form button:disabled { opacity: .5; cursor: default; }
+  .empty { color: var(--muted); text-align: center; margin: auto; padding: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>TransAccelors Assistant (test)</h1>
+      <div class="status">Server:
+        <select id="server">
+          <option value="http://localhost:8000">This Mac (localhost:8000)</option>
+          <option value="https://transaccelors-chatbot.onrender.com">Render (live)</option>
+        </select>
+      </div>
+      <div class="status"><span class="dot" id="dot"></span><span id="status">Checking server…</span></div>
+    </div>
+    <button class="ghost" id="newChat" type="button">New chat</button>
+  </header>
+
+  <div class="chat" id="chat">
+    <div class="empty" id="empty">Ask anything about TransAccelors, in any language.</div>
+  </div>
+
+  <div class="chips" id="chips">
+    <button type="button">What does FinAccelors do?</button>
+    <button type="button">What is the AI Immersion Lab?</button>
+    <button type="button">transaccelors schools ke liye kya karta hai?</button>
+    <button type="button">How can I contact TransAccelors?</button>
+  </div>
+
+  <form id="form">
+    <textarea id="input" placeholder="Type your question… (Enter to send, Shift+Enter for a new line)" rows="1"></textarea>
+    <button id="send" type="submit">Send</button>
+  </form>
+</div>
+
+<script>
+// Which chatbot server this page talks to. Default: the code running on this Mac
+// (start it with widget/start-local-test.sh). Pick "Render (live)" in the dropdown,
+// or open the page with ?api=<server address>, to test another server.
+const API_URL = new URLSearchParams(location.search).get("api") || "http://localhost:8000";
+const WAKE_HINT_MS = 6000;   // after this long with no answer, explain the server may be waking up
+const TIMEOUT_MS = 180000;   // give up after 3 minutes
+
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+let sessionId = null;        // the server's memory of this conversation (for follow-up questions)
+let busy = false;
+
+function store(key, value) { try { value === null ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value); } catch (e) {} }
+function load(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
+sessionId = load("chat_session_id");
+
+function renderMarkdown(text) {
+  let html = text;
+  try { html = DOMPurify.sanitize(marked.parse(text)); }
+  catch (e) { const d = document.createElement("div"); d.textContent = text; html = d.innerHTML.replace(/\n/g, "<br>"); }
+  const box = document.createElement("div");
+  box.innerHTML = html;
+  box.querySelectorAll("table").forEach(t => { const w = document.createElement("div"); w.className = "table-wrap"; t.replaceWith(w); w.appendChild(t); });
+  box.querySelectorAll("a").forEach(a => { a.target = "_blank"; a.rel = "noopener"; });
+  return box.innerHTML;
+}
+
+function addMessage(role, text) {
+  document.getElementById("empty")?.remove();
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  if (role === "user") el.textContent = text; else el.innerHTML = text;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+  return el;
+}
+
+async function ask(question) {
+  if (busy || !question.trim()) return;
+  busy = true; sendBtn.disabled = true;
+  addMessage("user", question);
+  const bot = addMessage("bot", '<span class="typing">Thinking…</span>');
+  const started = performance.now();
+  const wakeTimer = setTimeout(() => {
+    if (!answer) bot.innerHTML = '<span class="typing">Still working… if the server was asleep it can take about a minute to wake up.</span>';
+  }, WAKE_HINT_MS);
+  const controller = new AbortController();
+  const killTimer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let answer = "";
+  let firstPieceAt = null;
+
+  try {
+    const res = await fetch(API_URL + "/ask/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, session_id: sessionId }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).detail || ""; } catch (e) {}
+      throw new Error(detail || ("Server error " + res.status));
+    }
+    const newId = res.headers.get("X-Session-Id");
+    if (newId) { sessionId = newId; store("chat_session_id", newId); }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (firstPieceAt === null) firstPieceAt = performance.now();
+      answer += decoder.decode(value, { stream: true });
+      bot.innerHTML = renderMarkdown(answer);
+      chat.scrollTop = chat.scrollHeight;
+    }
+    answer += decoder.decode();
+    if (!answer.trim()) throw new Error("No answer came back. Please try again.");
+    const total = ((performance.now() - started) / 1000).toFixed(1);
+    const first = firstPieceAt ? ((firstPieceAt - started) / 1000).toFixed(1) : total;
+    bot.innerHTML = renderMarkdown(answer) + `<div class="meta">First words after ${first}s · done in ${total}s</div>`;
+  } catch (err) {
+    bot.classList.add("error");
+    const msg = err.name === "AbortError" ? "The server took too long to answer. Please try again."
+              : (err.message === "Failed to fetch" ? "Could not reach the chatbot server. Check your internet, or the server may be restarting." : err.message);
+    bot.textContent = "⚠️ " + msg;
+  } finally {
+    clearTimeout(wakeTimer); clearTimeout(killTimer);
+    busy = false; sendBtn.disabled = false; input.focus();
+    chat.scrollTop = chat.scrollHeight;
+  }
+}
+
+document.getElementById("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const q = input.value; input.value = ""; input.style.height = "";
+  ask(q);
+});
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("form").requestSubmit(); }
+});
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 140) + "px"; });
+document.getElementById("chips").addEventListener("click", e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); });
+document.getElementById("newChat").addEventListener("click", () => {
+  sessionId = null; store("chat_session_id", null);
+  chat.innerHTML = '<div class="empty" id="empty">New chat started. Ask anything about TransAccelors.</div>';
+});
+
+// Server picker: switching reloads the page with ?api=<server>, which starts a new chat
+const picker = document.getElementById("server");
+if (![...picker.options].some(o => o.value === API_URL)) picker.add(new Option(API_URL, API_URL));
+picker.value = API_URL;
+picker.addEventListener("change", () => {
+  store("chat_session_id", null);  // a session id from one server means nothing to another
+  location.search = "?api=" + encodeURIComponent(picker.value);
+});
+
+// Show whether the server is up
+(async () => {
+  const dot = document.getElementById("dot"), status = document.getElementById("status");
+  try {
+    const r = await fetch(API_URL + "/health", { signal: AbortSignal.timeout(90000) });
+    if (!r.ok) throw new Error();
+    dot.className = "dot ok"; status.textContent = "Server online";
+  } catch (e) {
+    dot.className = "dot bad"; status.textContent = "Server not reachable (it may be waking up — try again in a minute)";
+  }
+})();
+</script>
+</body>
+</html>
