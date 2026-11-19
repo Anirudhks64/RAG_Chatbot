@@ -42,11 +42,17 @@ SYSTEM_PROMPT = (
     # OLD rule 2: for "are you a catering service?" it said "could not find", as if they might be
     # "2. If the answer is not in the context, say you could not find it in the documents "
     # "and then print the contact details.\n"
+    # OLD rule 2 start (used the 'About the business' summary, now removed):
+    # "2. If the answer is not in the context: only if the user asks whether the business offers "
+    # "something from a COMPLETELY different industry (see 'About the business' at the end of the "
+    # "context; for an AI company: food, catering, selling physical products, building houses, travel), "
+    # "say clearly that it does not offer that and say in one sentence what it does instead. "
+    # "'About the business' is NOT a complete list: something missing from it may still be offered. "
     "2. If the answer is not in the context: only if the user asks whether the business offers "
-    "something from a COMPLETELY different industry (see 'About the business' at the end of the "
-    "context; for an AI company: food, catering, selling physical products, building houses, travel), "
-    "say clearly that it does not offer that and say in one sentence what it does instead. "
-    "'About the business' is NOT a complete list: something missing from it may still be offered. "
+    "something from a COMPLETELY different industry than the one the context shows "
+    "(for an AI company: food, catering, selling physical products, building houses, travel), "
+    "say clearly that it does not offer that and say in one sentence what it does instead, "
+    "based on the context. The context does not show everything: something missing from it may still be offered. "
     "So never say 'no' to anything in or near the business's own field (for an AI company: any AI, data, "
     "software, app or web development, IT, automation, chatbot, analytics, cybersecurity, training or "
     "hiring service). For those, for details like a price, salary or date, and whenever you are not sure, "
@@ -112,13 +118,14 @@ ABOUT = {
     #           "off-plan sales, payment plans, handover, service charges, resale).",
     # "wayfarra": "Wayfarra Holidays is a travel agency (flights, hotels, holiday packages, visas, "
     #             "travel insurance, WayCash, refunds).",
-    "transaccelors": "TransAccelors is an AI, data and technology company in Bengaluru and Dubai: "
-                     "AI and data consulting, custom AI solutions built for a business's problems "
-                     "(for example AI agents / chatbots that answer customer questions and complete tasks, "
-                     "and automation), the FinAccelors AI financial analysis product, "
-                     "the AI Immersion Lab, AI labs for schools and colleges, hiring solutions "
-                     "(AI/ML talent), careers, and a blog about AI. "
-                     "This list is not complete.",
+    # REMOVED: the bot must learn what TransAccelors does from the website only, not from this summary
+    # "transaccelors": "TransAccelors is an AI, data and technology company in Bengaluru and Dubai: "
+    #                  "AI and data consulting, custom AI solutions built for a business's problems "
+    #                  "(for example AI agents / chatbots that answer customer questions and complete tasks, "
+    #                  "and automation), the FinAccelors AI financial analysis product, "
+    #                  "the AI Immersion Lab, AI labs for schools and colleges, hiring solutions "
+    #                  "(AI/ML talent), careers, and a blog about AI. "
+    #                  "This list is not complete.",
 }
 
 
