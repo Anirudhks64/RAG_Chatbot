@@ -69,10 +69,11 @@ def _is_fresh(path):
     return path.exists() and time.time() - path.stat().st_mtime < CACHE_HOURS * 3600
 
 
-def fetch_page(url, cache_dir):
-    """The page's HTML: a recent saved copy, else downloaded, else an old saved copy."""
+def fetch_page(url, cache_dir, fresh=False):
+    """The page's HTML: a recent saved copy, else downloaded, else an old saved copy.
+    fresh=True: always try to download first (used when checking the site for changes)."""
     saved = _saved(url, cache_dir)
-    if _is_fresh(saved):
+    if not fresh and _is_fresh(saved):
         return saved.read_text(encoding="utf-8")
     html = trafilatura.fetch_url(url)
     if html:
@@ -126,12 +127,12 @@ def _follow_links(start_url, cache_dir):
     return list(seen)
 
 
-def find_all_pages(home_url, cache_dir):
+def find_all_pages(home_url, cache_dir, fresh=False):
     """Every page of the site (at most MAX_PAGES), home page first.
     The list is saved too, so a restart without internet still reads every page."""
     home = _normal(home_url)
     saved_list = _saved(home, cache_dir, ".pages.txt")
-    if _is_fresh(saved_list):
+    if not fresh and _is_fresh(saved_list):
         return saved_list.read_text(encoding="utf-8").split()
 
     try:
@@ -304,9 +305,11 @@ def page_to_chunks(company, url, html, chunk_size, chunk_overlap, max_table_char
     return chunks + _prefix_source_file(table_docs)
 
 
-def load_websites(list_file, chunk_size, chunk_overlap, cache_dir="data/web_cache", max_table_chars=1500):
+def load_websites(list_file, chunk_size, chunk_overlap, cache_dir="data/web_cache", max_table_chars=1500,
+                  fresh=False):
     """Chunks for every link in list_file, ready for the vector store (same format as the PDF chunks).
-    A home-page link reads the whole site; any other link reads just that page."""
+    A home-page link reads the whole site; any other link reads just that page.
+    fresh=True: download every page again, even if a recent saved copy exists."""
     if not Path(list_file).exists():
         print(f"No website list at {list_file}, skipping websites")
         return []
@@ -315,11 +318,11 @@ def load_websites(list_file, chunk_size, chunk_overlap, cache_dir="data/web_cach
 
     chunks = []
     for company, url in links:
-        pages = find_all_pages(url, cache_dir) if is_home_page(url) else [url]
+        pages = find_all_pages(url, cache_dir, fresh) if is_home_page(url) else [url]
 
         # Download several pages at the same time (much faster than one by one)
         with ThreadPoolExecutor(DOWNLOADS_AT_ONCE) as pool:
-            htmls = list(pool.map(lambda u: fetch_page(u, cache_dir), pages))
+            htmls = list(pool.map(lambda u: fetch_page(u, cache_dir, fresh), pages))
 
         seen_lines = set()
         site_chunks, short_pages = [], 0
@@ -339,3 +342,4 @@ def load_websites(list_file, chunk_size, chunk_overlap, cache_dir="data/web_cach
 
     print(f"Websites gave {len(chunks)} chunks\n")
     return chunks
+

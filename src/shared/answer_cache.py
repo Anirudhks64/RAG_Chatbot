@@ -89,6 +89,13 @@ class AnswerCache:
                 return entries[i]
         return None
 
+    def clear(self):
+        """Forgets every saved answer (used when the website changed, so no old answers are reused)."""
+        with self.lock:
+            count = len(self.entries)
+            self.entries = []
+        print(f"Cache: cleared {count} saved answers")
+
     def add(self, search_question: str, language: str, answer: str,
             entry: Optional[dict] = None, company: Optional[str] = None):
         """Saves an answer. Pass entry to add a new language version to an existing entry."""

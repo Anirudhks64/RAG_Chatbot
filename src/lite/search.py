@@ -67,8 +67,14 @@ class LiteEmbedder:
 
     def embed_documents(self, texts: List[str]) -> np.ndarray:
         print(f"Generating embeddings for {len(texts)} texts...")
-        with MODEL_LOCK:
-            return _normalize(np.array(list(self._model.embed(texts, batch_size=BATCH)), dtype=np.float32))
+        # OLD: one lock for all texts (a rebuild while running would make visitors wait for all of it)
+        # with MODEL_LOCK:
+        #     return _normalize(np.array(list(self._model.embed(texts, batch_size=BATCH)), dtype=np.float32))
+        vectors = []
+        for start in range(0, len(texts), BATCH):  # lock per small batch: questions can run in between
+            with MODEL_LOCK:
+                vectors += list(self._model.embed(texts[start:start + BATCH], batch_size=BATCH))
+        return _normalize(np.array(vectors, dtype=np.float32))
 
     def embed_query(self, text: str) -> np.ndarray:
         with MODEL_LOCK:
@@ -85,19 +91,30 @@ class LiteRetriever:
       1. meaning search (vectors in memory)  2. keyword search (BM25)
       3. merge both (Reciprocal Rank Fusion)  4. reranker picks the best chunks"""
 
-    def __init__(self, chunks, embedder: LiteEmbedder):
+    def __init__(self, chunks, embedder: LiteEmbedder, old: Optional["LiteRetriever"] = None):
+        """old: the retriever this one replaces (after the website changed). Its reranker model
+        and the vectors of unchanged text are reused, so only new or changed text is embedded."""
         self.embedder = embedder
         self.ids, self.texts, self.metadatas = [], [], []
         for i, doc in enumerate(chunks):
             self.ids.append(f"doc_{uuid.uuid4().hex[:8]}_{i}")
             self.texts.append(doc.page_content)
             self.metadatas.append({**doc.metadata, "doc_index": i})
-        self.vectors = embedder.embed_documents(self.texts) if self.texts else np.zeros((0, 1))
+        # OLD: every text embedded again
+        # self.vectors = embedder.embed_documents(self.texts) if self.texts else np.zeros((0, 1))
+        known = dict(zip(old.texts, old.vectors)) if old is not None and len(old.texts) else {}
+        new_texts = list(dict.fromkeys(t for t in self.texts if t not in known))
+        if new_texts:
+            known.update(zip(new_texts, embedder.embed_documents(new_texts)))
+        self.vectors = np.array([known[t] for t in self.texts], dtype=np.float32) if self.texts else np.zeros((0, 1))
         print("Building keyword (BM25) index ...")
         self.bm25 = BM25Okapi([tokenize(t) for t in self.texts]) if self.texts else None
-        print(f"Loading lite reranker model: {RERANK_MODEL}")
-        self.reranker = TextCrossEncoder(RERANK_MODEL, threads=THREADS)
-        print("Reranker loaded.\n")
+        if old is not None:
+            self.reranker = old.reranker
+        else:
+            print(f"Loading lite reranker model: {RERANK_MODEL}")
+            self.reranker = TextCrossEncoder(RERANK_MODEL, threads=THREADS)
+            print("Reranker loaded.\n")
 
     def _files_of(self, company: Optional[str]) -> Optional[Set[str]]:
         if not company:

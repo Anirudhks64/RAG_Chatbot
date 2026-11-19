@@ -12,6 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Mark the saved website copy as old, so every start reads the live website first
+# (the saved copy is only used if the website cannot be downloaded)
+RUN find data/web_cache -type f -exec touch -t 200001010000 {} +
+
 # Download the two small 8-bit models during the build, so starting up needs no download
 RUN python -c "import sys; sys.path[:0] = ['src/lite', 'src/shared']; import search as s; \
 s.LiteEmbedder(); s.TextCrossEncoder(s.RERANK_MODEL)"

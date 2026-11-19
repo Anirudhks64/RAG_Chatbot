@@ -6,6 +6,8 @@ without Chainlit, Chroma or PyTorch. Used by api.py in this folder.
 The full version (src/full/pipeline.py) is used by the Chainlit page and src/full/api.py.
 """
 import asyncio
+import hashlib
+import threading
 import time
 import sys
 from pathlib import Path
@@ -40,6 +42,65 @@ answer_cache = AnswerCache(embedder, same_question)
 del chunks  # the retriever keeps its own copy of the text
 
 print("\nSetup done (lite). Ready for questions.\n")
+
+
+# ======================================================================
+# KEEPING UP WITH THE WEBSITE
+# Every READ_HOURS all pages are downloaded again. If their text changed, the search
+# index is rebuilt (only new text is embedded), swapped in, and the saved answers are
+# cleared. Visitors keep getting answers the whole time. To update sooner, open the
+# /refresh link (api.py).
+# ======================================================================
+
+READ_HOURS = 6
+refresh_lock = threading.Lock()  # one re-read at a time (timer and /refresh link)
+
+
+def _text_fingerprint(texts) -> str:
+    return hashlib.sha1("\n\x00".join(texts).encode()).hexdigest()
+
+
+def refresh_from_website(reason: str) -> str:
+    """Reads every page again; rebuilds the search if the text changed. Returns what happened."""
+    global rag_retriever
+    if not USE_WEBSITES:
+        return "websites are switched off"
+    if not refresh_lock.acquire(blocking=False):
+        return "already reading the website"
+    try:
+        start = time.perf_counter()
+        print(f"Website re-read ({reason}) ...")
+        new_chunks = load_websites(WEBSITES_FILE, chunk_size=500, chunk_overlap=100, fresh=True)
+        if USE_PDFS:
+            new_chunks = load_pdf_files(list(Path("data").glob("**/*.pdf")), chunk_size=500,
+                                        chunk_overlap=100) + new_chunks
+        if not new_chunks:
+            return "nothing could be read, kept the current version"
+        if _text_fingerprint(c.page_content for c in new_chunks) == _text_fingerprint(rag_retriever.texts):
+            result = "no change"
+        else:
+            new_retriever = LiteRetriever(new_chunks, embedder, old=rag_retriever)
+            rag_retriever = new_retriever  # one step: questions use either the old or the new index
+            answer_cache.clear()
+            result = f"website changed: search rebuilt ({len(new_retriever.texts)} chunks)"
+        return result + f", took {time.perf_counter() - start:.1f}s"
+    finally:
+        refresh_lock.release()
+
+
+def _watch_website():
+    while True:
+        time.sleep(READ_HOURS * 3600)
+        try:
+            print(refresh_from_website(f"every {READ_HOURS} hours"))
+        except Exception as error:  # never let the watcher die
+            print(f"Website watcher error: {error}")
+
+
+def start_website_watcher():
+    if USE_WEBSITES:
+        threading.Thread(target=_watch_website, daemon=True, name="website-watcher").start()
+        print(f"Website watcher on: reads the website again every {READ_HOURS} hours")
 
 
 # ======================================================================
