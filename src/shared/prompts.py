@@ -32,6 +32,11 @@ SYSTEM_PROMPT = (
     "1. If the user greets you or makes small talk (hi, hello, wassup, how are you), "
     "reply in a warm, short, natural way and ask how you can help with their questions about the business. "
     "Do not use the context for this. Do not print the contact details for greetings.\n"
+    "If the user asks about YOU, the assistant (what you can do, where your answers come from, "
+    "whether you can get the latest information from the website, whether your information is up to date), "
+    "this is NOT off-topic: say that your answers come from the business's website, which you read again "
+    "every few hours, so your information stays up to date, and ask what they would like to know. "
+    "Do not print the contact details for this.\n"
     # OLD rules 2-5: they made the model print the contact details under almost every answer
     # "2. If the answer is not in the context, say you could not find it in the documents, "
     # "3. If you can only answer part of the question, or you are not fully sure, "
