@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urldefrag
 
+import lxml.html
 import trafilatura
 from trafilatura.sitemaps import sitemap_search
 from langchain_core.documents import Document
@@ -205,13 +206,14 @@ def split_markdown(text):
     return prose_text, tables
 
 
-def _drop_repeats(prose, seen_lines):
+def _drop_repeats(prose, seen_lines, min_chars=20):
     """Removes lines already read on another page of the same site (the same
-    banner or intro on every page would otherwise be stored many times)."""
+    banner or intro on every page would otherwise be stored many times).
+    Lines shorter than min_chars are kept even when repeated."""
     kept = []
     for line in prose.splitlines():
         key = " ".join(line.lower().split())
-        if len(key) >= 20 and key in seen_lines:
+        if key and len(key) >= min_chars and key in seen_lines:
             continue
         seen_lines.add(key)
         kept.append(line)
@@ -277,9 +279,61 @@ def page_title(html):
     return htmllib.unescape(found.group(1)).strip() if found else ""
 
 
+# READ_ALL_TEXT = True: keep ALL the text a visitor can see on the page (menus, slideshows,
+# short captions...), except the site menu (<nav>). A line repeated on the same page is kept once;
+# a long line (20+ characters, like the footer or cookie notice) repeated on other pages is kept once per site.
+# False: the old way, trafilatura guesses the "main content" and drops what looks like
+# decoration; it dropped real content (Tiny Tales on the AI Immersion Lab page, the home page slideshow).
+READ_ALL_TEXT = True
+
+# Never text a visitor reads, or (nav) the site menu, the same on every page
+_NOT_TEXT = {"script", "style", "noscript", "svg", "template", "head", "iframe", "select", "option", "nav"}
+# These start a new line
+_BLOCKS = {"p", "div", "section", "article", "header", "footer", "nav", "main", "aside", "li", "ul",
+           "ol", "br", "tr", "td", "th", "table", "span", "a", "button", "label",
+           "h1", "h2", "h3", "h4", "h5", "h6"}
+
+
+def all_visible_text(html):
+    """Every piece of text on the page, one line per block, headings marked with '#'.
+    Repeats on this page are left out (GoDaddy repeats slideshow titles and labels): a long line
+    (20+ characters) anywhere, a short one only right after itself, so short headings like
+    "AI Solutions" stay even though the menu has the same words."""
+    lines, words, seen = [], [], set()
+
+    def end_line(prefix=""):
+        line = " ".join("".join(words).split())
+        words.clear()
+        key = line.lower()
+        if not line or (len(key) >= 20 and key in seen) or (lines and lines[-1].lstrip("# ").lower() == key):
+            return
+        seen.add(key)
+        lines.append(prefix + line)
+
+    def walk(element):
+        tag = element.tag if isinstance(element.tag, str) else ""  # comments have no tag name
+        if tag not in _NOT_TEXT:
+            heading = "#" * int(tag[1]) + " " if re.fullmatch(r"h[1-6]", tag) else ""
+            if tag in _BLOCKS:
+                end_line()
+            words.append(element.text or "")
+            for child in element:
+                walk(child)
+            if tag in _BLOCKS:
+                end_line(heading)
+        words.append(element.tail or "")
+
+    walk(lxml.html.fromstring(html))
+    end_line()
+    return "\n\n".join(lines)
+
+
 def page_to_chunks(company, url, html, chunk_size, chunk_overlap, max_table_chars, seen_lines):
-    text = trafilatura.extract(html, url=url, output_format="markdown", include_tables=True,
-                               include_links=False, include_comments=False, include_images=False)
+    if READ_ALL_TEXT:
+        text = all_visible_text(html)
+    else:
+        text = trafilatura.extract(html, url=url, output_format="markdown", include_tables=True,
+                                   include_links=False, include_comments=False, include_images=False)
     hidden = script_text(html)
     if len(hidden) > len(text or ""):
         # The real article is in the page's data; the normal text was only the menu
